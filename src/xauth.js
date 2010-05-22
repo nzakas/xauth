@@ -32,63 +32,67 @@
 
 var XAuth = (function() {
 	// Reference shortcut so minifier can save on characters
-	var win = window;
+	var win = window,
 
-	// Check for browser capabilities
-	var unsupported = !(win.postMessage && win.localStorage && win.JSON);
+        // Check for browser capabilities
+        unsupported = !(win.postMessage && win.localStorage && win.JSON),
 	
-	var XAuthHostname = "xauth.org";
-	// TODO: https support. Needs CDN to have a proper cert
-	var XAuthServerUrl = "http://" + XAuthHostname + "/server.html";
+        XAuthHostname = "xauth.org",
+        
+        // TODO: https support. Needs CDN to have a proper cert
+        XAuthServerUrl = "http://" + XAuthHostname + "/server.html",
 
-	// Cached references
-	var iframe = null;
-	var postWindow = null;
+        // Cached references
+        iframe,
+        postWindow,
 
-	// Requests are done asynchronously so we add numeric ids to each
-	// postMessage request object. References to the request objects
-	// are stored in the openRequests object keyed by the request id.
-	var openRequests = {};
-	var requestId = 0;
-
-	// All requests made before the iframe is ready are queued (referenced by
-	// request id) in the requestQueue array and then called in order after
-	// the iframe has messaged to us that it's ready for communication
-	var requestQueue = [];
+        // Requests are done asynchronously so we add numeric ids to each
+        // postMessage request object. References to the request objects
+        // are stored in the openRequests object keyed by the request id.
+        openRequests = {},
+        requestId = 0,
+    
+        // All requests made before the iframe is ready are queued (referenced by
+        // request id) in the requestQueue array and then called in order after
+        // the iframe has messaged to us that it's ready for communication
+        requestQueue = [];
 
 	// Listener for window message events, receives messages from only
 	// the xauth domain that we set up in the iframe
 	function onMessage(event) {
 		// event.origin will always be of the format scheme://hostname:port
 		// http://www.whatwg.org/specs/web-apps/current-work/multipage/comms.html#dom-messageevent-origin
-		var originHostname = event.origin.split('://')[1].split(':')[0];
-		if(originHostname != XAuthHostname) {
-			// Doesn't match xauth.org, reject
-			return;
-		}
-		
-		// unfreeze request message into object
-		var msg = JSON.parse(event.data);
-		if(!msg) {
-			return;
-		}
+		var originHostname = event.origin.split('://')[1].split(':')[0],
+            msg,
+            request,
+            id;
+            
+		if(originHostname == XAuthHostname) {
 
-		// Check for special iframe ready message and call any pending
-		// requests in our queue made before the iframe was created.
-		if(msg.cmd == 'xauth::ready') {
-			// Cache the reference to the iframe window object
-			postWindow = iframe.contentWindow;
-			setTimeout(makePendingRequests, 0);
-			return;
-		}
-
-		// Look up saved request object and send response message to callback
-		var request = openRequests[msg.id];
-		if(request) {
-			if(request.callback) {
-				request.callback(msg);
-			}
-			delete openRequests[msg.id];
+            // unfreeze request message into object
+            msg = JSON.parse(event.data);
+            if(msg){
+                
+                // Check for special iframe ready message and call any pending
+                // requests in our queue made before the iframe was created.
+                if(msg.cmd == 'xauth::ready') {
+                    // Cache the reference to the iframe window object
+                    postWindow = iframe.contentWindow;
+                    setTimeout(makePendingRequests, 0);
+                } else {
+    
+                    id = msg.id;
+            
+                    // Look up saved request object and send response message to callback
+                    request = openRequests[id];
+                    if(request) {
+                        if(request.callback) {
+                            request.callback(msg);
+                        }
+                        delete openRequests[id];
+                    }
+                }
+            }
 		}
 	}
 
@@ -99,9 +103,7 @@ var XAuth = (function() {
 		// Create hidden iframe dom element
 		var doc = win.document;
 		iframe = doc.createElement('iframe');
-		var iframeStyle = iframe.style;
-		iframeStyle.position = 'absolute';
-		iframeStyle.left = iframeStyle.top = '-999px';
+        iframe.style.cssText="position:absolute;left:-999px;top:-999px";
 
 		// Setup postMessage event listeners
 		if (win.addEventListener) {
@@ -132,17 +134,18 @@ var XAuth = (function() {
 	// request Id and either queues up the request before the iframe
 	// is created or makes the actual request
 	function queueRequest(requestObj) {
-		if(unsupported) { return; }
-		requestObj.id = requestId;
-		openRequests[requestId++] = requestObj;
-
-		// If window isn't ready, add it to a queue
-		if(!iframe || !postWindow) {
-			requestQueue.push(requestObj.id);
-			setupWindow(); // must happen after we've added to the queue
-		} else {
-			makeRequest(requestObj);
-		}
+		if(!unsupported) { 
+            requestObj.id = requestId;
+            openRequests[requestId++] = requestObj;
+    
+            // If window isn't ready, add it to a queue
+            if(!iframe || !postWindow) {
+                requestQueue.push(requestObj.id);
+                setupWindow(); // must happen after we've added to the queue
+            } else {
+                makeRequest(requestObj);
+            }
+        }
 	}
 	
 	// Following three functions are just API wrappers that clean up the
@@ -150,35 +153,32 @@ var XAuth = (function() {
 	// appropriate command strings to the request objects
 
 	function callRetrieve(args) {
-		if(!args) { args = {}; }
-		var requestObj = {
+        args = args || {};
+		queueRequest({
 			cmd: 'xauth::retrieve',
 			retrieve: args.retrieve || [],
 			callback: args.callback || null
-		}
-		queueRequest(requestObj);
+		});
 	}
 	
 	function callExtend(args) {
-		if(!args) { args = {}; }
-		var requestObj = {
+        args = args || {};
+		queueRequest({
 			cmd: 'xauth::extend',
 			token: args.token || '',
 			expire: args.expire || 0,
 			extend: args.extend || [],
 			session: args.session || false,
 			callback: args.callback || null
-		}
-		queueRequest(requestObj);
+		});
 	}
 	
 	function callExpire(args) {
-		if(!args) { args = {}; }
-		var requestObj = {
+		args = args || {};
+		queueRequest({
 			cmd: 'xauth::expire',
 			callback: args.callback || null
-		}
-		queueRequest(requestObj);
+		});
 	}
 
 	// Return XAuth object with exposed API calls
